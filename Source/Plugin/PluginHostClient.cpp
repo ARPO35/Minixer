@@ -1,0 +1,359 @@
+/*
+  ==============================================================================
+
+    PluginHostClient.cpp
+
+  ==============================================================================
+*/
+
+#include "PluginHostClient.h"
+
+namespace minixer
+{
+
+//==============================================================================
+PluginHostClient::PluginHostClient() = default;
+
+PluginHostClient::~PluginHostClient()
+{
+    disconnect();
+}
+
+//==============================================================================
+bool PluginHostClient::connect (const juce::String& ipcKey,
+                                uint32_t maxFrames,
+                                uint32_t numInputs,
+                                uint32_t numOutputs)
+{
+    disconnect();
+
+    maxFramesPerBlock = maxFrames;
+    numInputChannels = numInputs;
+    numOutputChannels = numOutputs;
+
+    sharedMemory = createDefaultSharedMemoryRegion();
+
+    if (sharedMemory == nullptr)
+    {
+        lastError = "Shared memory implementation not available";
+        return false;
+    }
+
+    const size_t audioShmSize = AudioSharedMemoryLayout::getTotalSize (maxFramesPerBlock,
+                                                                       numInputChannels,
+                                                                       numOutputChannels);
+
+    if (! sharedMemory->create (ipcKey, audioShmSize))
+    {
+        lastError = "Failed to create shared memory";
+        return false;
+    }
+
+    audioLayout = static_cast<AudioSharedMemoryLayout*> (sharedMemory->getAddress());
+
+    if (audioLayout == nullptr)
+    {
+        lastError = "Failed to map shared memory";
+        return false;
+    }
+
+    audioLayout->maxFramesPerBlock = maxFramesPerBlock;
+    audioLayout->numInputChannels = numInputChannels;
+    audioLayout->numOutputChannels = numOutputChannels;
+
+    transport = createDefaultIpcTransport();
+
+    if (transport == nullptr)
+    {
+        lastError = "IPC transport implementation not available";
+        return false;
+    }
+
+    if (! transport->connect (ipcKey))
+    {
+        lastError = "Failed to connect IPC transport";
+        return false;
+    }
+
+    return true;
+}
+
+//==============================================================================
+void PluginHostClient::disconnect()
+{
+    if (transport != nullptr && transport->isConnected())
+    {
+        shutdown();
+        transport->close();
+    }
+
+    transport.reset();
+
+    audioLayout = nullptr;
+    sharedMemory.reset();
+}
+
+//==============================================================================
+bool PluginHostClient::initPlugin (double sampleRate, int bufferSize)
+{
+    MessageBuilder payload;
+    payload.writeUInt32 (static_cast<uint32_t> (sampleRate));
+    payload.writeUInt32 (static_cast<uint32_t> (bufferSize));
+    payload.writeUInt32 (numInputChannels);
+    payload.writeUInt32 (numOutputChannels);
+
+    const auto requestId = nextRequestId();
+
+    if (! sendCommand (ControlMessageType::Init, payload.getData(), requestId))
+        return false;
+
+    juce::MemoryBlock response;
+    if (! readResponse (response, ControlMessageType::InitResult, requestId, 30000))
+        return false;
+
+    MessageReader reader (response);
+    bool success = false;
+    reader.readBool (success);
+    return success;
+}
+
+//==============================================================================
+bool PluginHostClient::prepareToPlay (double sampleRate, int bufferSize)
+{
+    MessageBuilder payload;
+    payload.writeUInt32 (static_cast<uint32_t> (sampleRate));
+    payload.writeUInt32 (static_cast<uint32_t> (bufferSize));
+
+    return sendCommand (ControlMessageType::PrepareToPlay, payload.getData(), nextRequestId());
+}
+
+//==============================================================================
+bool PluginHostClient::releaseResources()
+{
+    return sendCommand (ControlMessageType::ReleaseResources, {}, nextRequestId());
+}
+
+//==============================================================================
+bool PluginHostClient::processBlock (int numSamples)
+{
+    if (audioLayout == nullptr)
+        return false;
+
+    const uint32_t currentSeq = audioLayout->hostWriteSeq.load (std::memory_order_relaxed) + 1;
+    audioLayout->hostWriteSeq.store (currentSeq, std::memory_order_release);
+
+    MessageBuilder payload;
+    payload.writeUInt32 (static_cast<uint32_t> (numSamples));
+
+    const auto requestId = nextRequestId();
+    if (! sendCommand (ControlMessageType::ProcessBlock, payload.getData(), requestId))
+        return false;
+
+    // 等待子进程完成：pluginWriteSeq 等于 currentSeq 表示处理完成。
+    const auto timeout = juce::Time::getCurrentTime() + juce::RelativeTime::milliseconds (5000);
+
+    while (audioLayout->pluginWriteSeq.load (std::memory_order_acquire) != currentSeq)
+    {
+        if (juce::Time::getCurrentTime() > timeout)
+        {
+            lastError = "PluginHost process block timeout";
+            return false;
+        }
+
+        juce::Thread::sleep (1);
+    }
+
+    return true;
+}
+
+//==============================================================================
+void PluginHostClient::writeInput (const juce::AudioBuffer<float>& inputBuffer, int numSamples)
+{
+    if (audioLayout == nullptr)
+        return;
+
+    const auto inputChans = static_cast<uint32_t> (inputBuffer.getNumChannels());
+    const auto chansToWrite = juce::jmin (numInputChannels, inputChans);
+
+    for (uint32_t ch = 0; ch < chansToWrite; ++ch)
+    {
+        auto* dst = audioLayout->getInputChannelData (ch, maxFramesPerBlock,
+                                                       numInputChannels, numOutputChannels);
+        std::memcpy (dst, inputBuffer.getReadPointer (static_cast<int> (ch)),
+                     static_cast<size_t> (numSamples) * sizeof (float));
+    }
+}
+
+//==============================================================================
+void PluginHostClient::readOutput (juce::AudioBuffer<float>& outputBuffer, int numSamples)
+{
+    if (audioLayout == nullptr)
+        return;
+
+    const auto outputChans = static_cast<uint32_t> (outputBuffer.getNumChannels());
+    const auto chansToRead = juce::jmin (numOutputChannels, outputChans);
+
+    for (uint32_t ch = 0; ch < chansToRead; ++ch)
+    {
+        auto* src = audioLayout->getOutputChannelData (ch, maxFramesPerBlock,
+                                                        numInputChannels, numOutputChannels);
+        std::memcpy (outputBuffer.getWritePointer (static_cast<int> (ch)),
+                     src,
+                     static_cast<size_t> (numSamples) * sizeof (float));
+    }
+}
+
+//==============================================================================
+bool PluginHostClient::setState (const juce::MemoryBlock& state)
+{
+    MessageBuilder payload;
+    payload.writeMemoryBlock (state);
+    return sendCommand (ControlMessageType::SetState, payload.getData(), nextRequestId());
+}
+
+//==============================================================================
+bool PluginHostClient::getState (juce::MemoryBlock& state)
+{
+    const auto requestId = nextRequestId();
+
+    if (! sendCommand (ControlMessageType::GetState, {}, requestId))
+        return false;
+
+    juce::MemoryBlock response;
+    if (! readResponse (response, ControlMessageType::StateData, requestId, 30000))
+        return false;
+
+    MessageReader reader (response);
+    return reader.readMemoryBlock (state);
+}
+
+//==============================================================================
+bool PluginHostClient::setParameter (int index, float value)
+{
+    MessageBuilder payload;
+    payload.writeUInt32 (static_cast<uint32_t> (index));
+    payload.writeFloat (value);
+    return sendCommand (ControlMessageType::SetParameter, payload.getData(), nextRequestId());
+}
+
+//==============================================================================
+int PluginHostClient::getLatencySamples()
+{
+    const auto requestId = nextRequestId();
+
+    if (! sendCommand (ControlMessageType::GetLatency, {}, requestId))
+        return 0;
+
+    juce::MemoryBlock response;
+    if (! readResponse (response, ControlMessageType::LatencyInfo, requestId, 30000))
+        return 0;
+
+    MessageReader reader (response);
+    uint32_t latency = 0;
+    reader.readUInt32 (latency);
+    return static_cast<int> (latency);
+}
+
+//==============================================================================
+bool PluginHostClient::showEditor (void* parentWindowHandle)
+{
+    MessageBuilder payload;
+    payload.writeUInt64 (reinterpret_cast<uintptr_t> (parentWindowHandle));
+    return sendCommand (ControlMessageType::ShowEditor, payload.getData(), nextRequestId());
+}
+
+//==============================================================================
+bool PluginHostClient::hideEditor()
+{
+    return sendCommand (ControlMessageType::HideEditor, {}, nextRequestId());
+}
+
+//==============================================================================
+bool PluginHostClient::shutdown()
+{
+    if (transport == nullptr || ! transport->isConnected())
+        return false;
+
+    return sendCommand (ControlMessageType::Shutdown, {}, nextRequestId());
+}
+
+//==============================================================================
+bool PluginHostClient::isConnected() const
+{
+    return transport != nullptr && transport->isConnected();
+}
+
+//==============================================================================
+bool PluginHostClient::sendCommand (ControlMessageType type,
+                                    const juce::MemoryBlock& payload,
+                                    uint64_t requestId)
+{
+    if (transport == nullptr)
+    {
+        lastError = "Transport not connected";
+        return false;
+    }
+
+    MessageBuilder builder;
+    builder.getData() = payload;
+    auto frame = builder.buildWithHeader (type, requestId);
+    return transport->sendMessage (frame);
+}
+
+//==============================================================================
+bool PluginHostClient::readResponse (juce::MemoryBlock& payload,
+                                     ControlMessageType expectedType,
+                                     uint64_t requestId,
+                                     int timeoutMs)
+{
+    if (transport == nullptr)
+        return false;
+
+    const auto deadline = juce::Time::getCurrentTime() + juce::RelativeTime::milliseconds (timeoutMs);
+
+    while (true)
+    {
+        juce::MemoryBlock frame;
+        const int remainingMs = juce::jmax (0, static_cast<int> ((deadline - juce::Time::getCurrentTime()).inMilliseconds()));
+
+        if (! transport->readMessage (frame, remainingMs))
+        {
+            lastError = "Timeout waiting for response";
+            return false;
+        }
+
+        if (frame.getSize() < ControlHeader::size)
+            continue;
+
+        ControlHeader header;
+        std::memcpy (&header, frame.getData(), ControlHeader::size);
+
+        if (! header.isValid())
+            continue;
+
+        payload.replaceAll (static_cast<const uint8_t*> (frame.getData()) + ControlHeader::size,
+                            frame.getSize() - ControlHeader::size);
+
+        if (header.requestId == requestId && static_cast<ControlMessageType> (header.type) == expectedType)
+            return true;
+
+        // 异步通知（日志、错误、编辑器关闭）暂不处理，继续等待目标响应。
+        if (static_cast<ControlMessageType> (header.type) == ControlMessageType::Error)
+        {
+            MessageReader reader (payload);
+            uint32_t code = 0;
+            juce::String msg;
+            reader.readUInt32 (code);
+            reader.readString (msg);
+            lastError = msg;
+        }
+    }
+}
+
+//==============================================================================
+uint64_t PluginHostClient::nextRequestId()
+{
+    return currentRequestId++;
+}
+
+} // namespace minixer
