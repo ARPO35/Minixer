@@ -82,8 +82,8 @@ struct AEffect
     VstInt32 numOutputs;
     VstInt32 flags;             ///< AEffectFlags 位组合
 
-    void* resvd1;               ///< 保留，创建时必须为 0
-    void* resvd2;               ///< 保留，创建时必须为 0
+    VstIntPtr resvd1;           ///< 保留，创建时必须为 0
+    VstIntPtr resvd2;           ///< 保留（JUCE 用作实例指针回写）
 
     VstInt32 initialDelay;      ///< 插件延迟（采样数）
     VstInt32 realQualities;     ///< 实时品质（未使用）
