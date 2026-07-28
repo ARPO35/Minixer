@@ -56,20 +56,17 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE=cmake/linux-i686-toolchain.cmake -DMINIXER_BUILD_32BIT=ON .
           cmake --build build32
 
-      - name: Assemble staging tree
-        run: |
-          cmake --install build --prefix staging/usr
-          cp build32/PluginHost32_artefacts/${{ env.BUILD_TYPE }}/PluginHost32 staging/usr/lib/minixer/
-
       - name: Package (tar.gz + rpm)
         working-directory: build
-        run: cpack -D CPACK_INSTALLED_DIRECTORIES="$PWD/../staging;/" -G "TGZ;RPM"
+        run: cpack -G "TGZ;RPM"
 
       - name: Smoke check
         run: |
-          ! ldd staging/usr/lib/minixer/Minixer | grep "not found"
+          mkdir -p /tmp/minixer-smoke && tar -xzf build/minixer-*.tar.gz -C /tmp/minixer-smoke
+          BIN=$(echo /tmp/minixer-smoke/minixer-*/usr/lib/minixer/Minixer)
+          ! ldd "$BIN" | grep "not found"
           rc=0
-          xvfb-run -a timeout 20 ./staging/usr/lib/minixer/Minixer || rc=$?
+          xvfb-run -a timeout 20 "$BIN" || rc=$?
           # timeout 20 存活被杀返回 124 = 通过；其他退出码 = 启动即崩溃
           test "$rc" -eq 124
 

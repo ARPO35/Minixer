@@ -143,6 +143,9 @@ target_link_libraries(${MINIXER_HOST_TARGET_NAME} PRIVATE
 
 if(NOT MINIXER_BUILD_32BIT)
     install(TARGETS Minixer ${MINIXER_HOST_TARGET_NAME} RUNTIME DESTINATION lib/minixer)
+    # 32 位子进程在独立 configure 中构建（CI 先构建 build32），存在才打入包
+    install(PROGRAMS "${CMAKE_BINARY_DIR}/../build32/PluginHost32_artefacts/${CMAKE_BUILD_TYPE}/PluginHost32"
+            DESTINATION lib/minixer OPTIONAL)
     install(DIRECTORY assets/ DESTINATION lib/minixer/assets)
     install(FILES packaging/Minixer.desktop DESTINATION share/applications)
     install(FILES assets/minixer_06_warm_orange.png
@@ -158,6 +161,7 @@ endif()
 
 set(CPACK_PACKAGE_NAME minixer)
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGING_INSTALL_PREFIX /usr)
 set(CPACK_PACKAGE_VENDOR "Minixer")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Standalone VST mixer for microphone processing")
 set(CPACK_GENERATOR "TGZ;RPM")
