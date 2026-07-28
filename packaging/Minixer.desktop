@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Minixer
+Comment=Standalone VST mixer for microphone processing
+Exec=/usr/bin/minixer
+Icon=minixer
+Terminal=false
+Categories=AudioVideo;Audio;Mixer;
