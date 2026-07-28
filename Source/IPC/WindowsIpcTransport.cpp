@@ -243,6 +243,18 @@ std::unique_ptr<IpcTransport> createDefaultIpcTransport()
 
 } // namespace minixer
 
+#elif JUCE_LINUX
+
+ #include "UnixIpcTransport.h"
+
+namespace minixer
+{
+std::unique_ptr<IpcTransport> createDefaultIpcTransport()
+{
+    return std::make_unique<UnixIpcTransport>();
+}
+} // namespace minixer
+
 #else
 
 namespace minixer

@@ -129,6 +129,18 @@ std::unique_ptr<SharedMemoryRegion> createDefaultSharedMemoryRegion()
 
 } // namespace minixer
 
+#elif JUCE_LINUX
+
+ #include "UnixSharedMemoryRegion.h"
+
+namespace minixer
+{
+std::unique_ptr<SharedMemoryRegion> createDefaultSharedMemoryRegion()
+{
+    return std::make_unique<UnixSharedMemoryRegion>();
+}
+} // namespace minixer
+
 #else
 
 namespace minixer
