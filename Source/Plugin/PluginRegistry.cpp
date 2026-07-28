@@ -557,7 +557,7 @@ PluginRegistry::PluginRegistry()
     metadataStore = std::make_unique<ScanMetadataStore>();
     loadScanMetadata();
 
-    formatManager.addDefaultFormats();
+    juce::addDefaultFormatsToManager (formatManager);
     knownList.setCustomScanner (std::make_unique<ArchFilterScanner> (*this));
     loadList();
 }

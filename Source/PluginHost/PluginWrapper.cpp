@@ -67,7 +67,7 @@ bool PluginWrapper::loadFromFile (const juce::File& file,
                                   juce::String& error)
 {
     juce::AudioPluginFormatManager formatManager;
-    formatManager.addDefaultFormats();
+    juce::addDefaultFormatsToManager (formatManager);
 
     juce::AudioPluginFormat* vst3Format = nullptr;
 

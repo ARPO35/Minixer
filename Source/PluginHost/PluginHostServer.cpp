@@ -138,7 +138,7 @@ bool PluginHostServer::connect (const juce::String& key,
 int PluginHostServer::runScanMode()
 {
     juce::AudioPluginFormatManager formatManager;
-    formatManager.addDefaultFormats();
+    juce::addDefaultFormatsToManager (formatManager);
 
     juce::AudioPluginFormat* vst3Format = nullptr;
 
