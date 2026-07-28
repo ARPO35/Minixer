@@ -1,5 +1,9 @@
 #include "AppSettings.h"
 
+#if JUCE_LINUX
+ #include <cstdlib>  // ::getenv（XDG_CONFIG_HOME）
+#endif
+
 namespace minixer
 {
 
@@ -190,6 +194,44 @@ void AppSettings::applyLaunchOnStartup()
     else
     {
         juce::WindowsRegistry::deleteValue (regPath);
+    }
+   #elif JUCE_LINUX
+    // XDG Autostart：在 $XDG_CONFIG_HOME/autostart 下写入/删除 Minixer.desktop。
+    // XDG_CONFIG_HOME 未设置或为空时按规范退回 ~/.config。
+    const char* xdgConfigHome = ::getenv ("XDG_CONFIG_HOME");
+
+    const auto configDir = (xdgConfigHome != nullptr && xdgConfigHome[0] != '\0')
+                               ? juce::File (juce::String (xdgConfigHome))
+                               : juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+                                     .getChildFile (".config");
+
+    const auto desktopFile = configDir.getChildFile ("autostart")
+                                      .getChildFile ("Minixer.desktop");
+
+    if (launchOnStartup)
+    {
+        auto exePath = juce::File::getSpecialLocation (juce::File::currentExecutableFile)
+                            .getFullPathName();
+
+        desktopFile.getParentDirectory().createDirectory();
+
+        const juce::String contents
+            = juce::String ("[Desktop Entry]\n"
+                            "Type=Application\n"
+                            "Name=Minixer\n"
+                            "Exec=")
+              + exePath + "\n"
+              "X-GNOME-Autostart-enabled=true\n"
+              "Terminal=false\n"
+              "Icon=minixer\n";
+
+        if (! desktopFile.replaceWithText (contents))
+            DBG ("Failed to write autostart file: " << desktopFile.getFullPathName());
+    }
+    else
+    {
+        if (desktopFile.existsAsFile() && ! desktopFile.deleteFile())
+            DBG ("Failed to delete autostart file: " << desktopFile.getFullPathName());
     }
    #else
     juce::ignoreUnused (launchOnStartup);

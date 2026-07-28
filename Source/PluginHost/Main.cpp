@@ -21,9 +21,16 @@
  #include <windows.h>
  #include <dbghelp.h>
  #pragma comment(lib, "dbghelp.lib")
+#elif JUCE_LINUX
+ #include <cstdio>
+ #include <execinfo.h>
+ #include <fcntl.h>
+ #include <signal.h>
+ #include <unistd.h>
 #endif
 
-#if JUCE_WINDOWS
+// 崩溃记录基础设施同时服务于 Windows（MiniDump）与 Linux（backtrace）两条路径，
+// 因此匿名命名空间不再包裹在平台警卫内；平台专属部分在命名空间内部再分支。
 namespace
 {
 
@@ -49,6 +56,7 @@ juce::File getCrashDumpDirectory()
 }
 
 //==============================================================================
+#if JUCE_WINDOWS
 LONG WINAPI writeMiniDumpOnUnhandledException (EXCEPTION_POINTERS* exceptionInfo)
 {
     if (exceptionInfo == nullptr)
@@ -83,9 +91,67 @@ LONG WINAPI writeMiniDumpOnUnhandledException (EXCEPTION_POINTERS* exceptionInfo
 
     return EXCEPTION_EXECUTE_HANDLER;
 }
+#elif JUCE_LINUX
+/** Linux 崩溃信号处理器：把 backtrace 追加写入崩溃日志后立刻退出。
+
+    与 Windows 的 MiniDump 对应，日志写到同一个 getCrashDumpDirectory() 下，
+    文件名为 PluginHost_<ipcKey>_<pid>.crash.log。处理器内只用 async-signal-safe
+    或近似安全的调用（open/write/backtrace/backtrace_symbols_fd/_exit），属于崩溃
+    路径上的 best-effort 记录。
+*/
+void writeBacktraceOnCrashSignal (int signalNumber)
+{
+    const auto dumpFile = getCrashDumpDirectory()
+                              .getChildFile ("PluginHost_" + g_crashDumpIpcKey
+                                             + "_" + juce::String (static_cast<int> (::getpid()))
+                                             + ".crash.log");
+
+    const int fd = ::open (dumpFile.getFullPathName().toRawUTF8(),
+                           O_WRONLY | O_CREAT | O_APPEND, 0644);
+
+    if (fd >= 0)
+    {
+        char header[160];
+        const auto headerLength = ::snprintf (header, sizeof (header),
+                                              "Minixer PluginHost crashed: signal %d, pid %d\n",
+                                              signalNumber, static_cast<int> (::getpid()));
+
+        if (headerLength > 0)
+        {
+            const auto bytesWritten = ::write (fd, header, static_cast<size_t> (headerLength));
+            (void) bytesWritten;
+        }
+
+        void* frames[64];
+        const int numFrames = ::backtrace (frames, 64);
+
+        if (numFrames > 0)
+            ::backtrace_symbols_fd (frames, numFrames, fd);
+
+        ::close (fd);
+    }
+
+    ::_exit (134);
+}
+
+/** 安装 Linux 崩溃信号处理器（SIGSEGV/SIGABRT）。
+
+    SA_RESETHAND 使处理器触发一次后即恢复默认行为：若处理器自身再次崩溃，
+    进程仍按系统默认方式终止（可产生 core dump），不会死循环。
+*/
+void installCrashSignalHandlers()
+{
+    struct sigaction action = {};
+    action.sa_handler = writeBacktraceOnCrashSignal;
+    action.sa_flags   = SA_RESETHAND;
+    ::sigemptyset (&action.sa_mask);
+
+    ::sigaction (SIGSEGV, &action, nullptr);
+    ::sigaction (SIGABRT, &action, nullptr);
+}
+#endif
 
 } // anonymous namespace
-#endif
 
 //==============================================================================
 static juce::String getCommandLineParameter (const juce::String& name,
@@ -124,6 +190,10 @@ public:
         g_crashDumpIpcKey  = ipcKey;
         g_crashDumpLogPath = logPath;
         SetUnhandledExceptionFilter (writeMiniDumpOnUnhandledException);
+       #elif JUCE_LINUX
+        g_crashDumpIpcKey  = ipcKey;
+        g_crashDumpLogPath = logPath;
+        installCrashSignalHandlers();
        #endif
 
         const uint32_t maxFrames = static_cast<uint32_t> (juce::jmax (1, maxFramesStr.getIntValue()));
