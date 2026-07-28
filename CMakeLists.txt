@@ -44,6 +44,7 @@ set(MINIXER_HOST_COMPILE_DEFS
     JUCE_PLUGINHOST_VST=1
     JUCE_WEB_BROWSER=0
     JUCE_PLUGINHOST_LADSPA=0
+    JUCE_USE_CURL=0 # 全应用无网络调用；同时规避 i386 curl dev 的 multiarch 冲突
     JUCE_STRICT_REFCOUNTEDPOINTER=1)
 
 # PluginHost 子进程源文件（主程序与 PluginHost 共用 IPC 与架构检测代码）
@@ -70,11 +71,11 @@ endif()
 if(NOT MINIXER_BUILD_32BIT)
 
 # 主程序
-juce_add_gui_app(Minixer
+    juce_add_gui_app(Minixer
     PRODUCT_NAME "Minixer"
     COMPANY_NAME ""
     VERSION 1.0.0
-    NEEDS_CURL TRUE
+    NEEDS_CURL FALSE
     NEEDS_WEB_BROWSER FALSE
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/assets/minixer_06_warm_orange.png")
 
@@ -131,9 +132,7 @@ juce_add_gui_app(${MINIXER_HOST_TARGET_NAME}
 
 target_sources(${MINIXER_HOST_TARGET_NAME} PRIVATE ${MINIXER_PLUGINHOST_SOURCES})
 target_include_directories(${MINIXER_HOST_TARGET_NAME} PRIVATE JuceLibraryCode)
-target_compile_definitions(${MINIXER_HOST_TARGET_NAME} PRIVATE
-    ${MINIXER_HOST_COMPILE_DEFS}
-    JUCE_USE_CURL=0) # PluginHost 无网络需求；32 位下 i386 curl dev 与 amd64 冲突不可同装
+target_compile_definitions(${MINIXER_HOST_TARGET_NAME} PRIVATE ${MINIXER_HOST_COMPILE_DEFS})
 target_link_libraries(${MINIXER_HOST_TARGET_NAME} PRIVATE
     ${MINIXER_JUCE_MODULES}
     juce::juce_recommended_config_flags
@@ -164,6 +163,6 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Standalone VST mixer for microphone proce
 set(CPACK_GENERATOR "TGZ;RPM")
 set(CPACK_RPM_PACKAGE_LICENSE "AGPLv3")
 set(CPACK_RPM_PACKAGE_GROUP "Applications/Multimedia")
-set(CPACK_RPM_PACKAGE_REQUIRES "alsa-lib, freetype, fontconfig, libX11, libXext, libXinerama, libXrandr, libXcursor, libXcomposite, libXi, libXrender, libcurl")
+set(CPACK_RPM_PACKAGE_REQUIRES "alsa-lib, freetype, fontconfig, libX11, libXext, libXinerama, libXrandr, libXcursor, libXcomposite, libXi, libXrender")
 set(CPACK_PACKAGE_CONTACT "")
 include(CPack)
