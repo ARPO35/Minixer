@@ -36,7 +36,7 @@ jobs:
           sudo dpkg --add-architecture i386
           sudo apt-get update
           sudo apt-get install -y gcc-multilib g++-multilib \
-            libasound2-dev:i386 libcurl4-openssl-dev:i386 libfreetype-dev:i386 \
+            libasound2-dev:i386 libfreetype-dev:i386 \
             libfontconfig1-dev:i386 libx11-dev:i386 libxcomposite-dev:i386 \
             libxcursor-dev:i386 libxext-dev:i386 libxinerama-dev:i386 \
             libxrandr-dev:i386 libxrender-dev:i386 libxi-dev:i386

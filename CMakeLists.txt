@@ -125,12 +125,14 @@ juce_add_gui_app(${MINIXER_HOST_TARGET_NAME}
     PRODUCT_NAME "${MINIXER_HOST_TARGET_NAME}"
     COMPANY_NAME ""
     VERSION 1.0.0
-    NEEDS_CURL TRUE
+    NEEDS_CURL FALSE
     NEEDS_WEB_BROWSER FALSE)
 
 target_sources(${MINIXER_HOST_TARGET_NAME} PRIVATE ${MINIXER_PLUGINHOST_SOURCES})
 target_include_directories(${MINIXER_HOST_TARGET_NAME} PRIVATE JuceLibraryCode)
-target_compile_definitions(${MINIXER_HOST_TARGET_NAME} PRIVATE ${MINIXER_HOST_COMPILE_DEFS})
+target_compile_definitions(${MINIXER_HOST_TARGET_NAME} PRIVATE
+    ${MINIXER_HOST_COMPILE_DEFS}
+    JUCE_USE_CURL=0) # PluginHost 无网络需求；32 位下 i386 curl dev 与 amd64 冲突不可同装
 target_link_libraries(${MINIXER_HOST_TARGET_NAME} PRIVATE
     ${MINIXER_JUCE_MODULES}
     juce::juce_recommended_config_flags
