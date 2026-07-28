@@ -19,6 +19,7 @@ juce::File PluginHostLauncher::getHostExecutableForArchitecture (PluginArchitect
     const juce::String baseName = "PluginHost";
     juce::String fileName;
 
+   #if JUCE_WINDOWS
     switch (arch)
     {
         case PluginArchitecture::x86:
@@ -31,6 +32,21 @@ juce::File PluginHostLauncher::getHostExecutableForArchitecture (PluginArchitect
             fileName = baseName + "64.exe";
             break;
     }
+   #else
+    // Linux 下子进程可执行文件无扩展名，文件名与 CMake 目标输出名一致。
+    switch (arch)
+    {
+        case PluginArchitecture::x86:
+            fileName = baseName + "32";
+            break;
+        case PluginArchitecture::x64:
+            fileName = baseName + "64";
+            break;
+        default:
+            fileName = baseName + "64";
+            break;
+    }
+   #endif
 
     return hostExe.getParentDirectory().getChildFile (fileName);
 }

@@ -22,6 +22,10 @@
  #include <excpt.h>
  #include <bcrypt.h>
  #pragma comment(lib, "bcrypt.lib")
+#else
+ // 非 Windows 平台的 computeFileHashSha256 使用 juce::SHA256（juce_cryptography 模块），
+ // 该模块不在 JuceHeader.h 伞头内，需要在此显式包含。
+ #include <juce_cryptography/juce_cryptography.h>
 #endif
 
 namespace minixer
@@ -96,17 +100,13 @@ static bool safeFindAllTypesForFile (juce::AudioPluginFormat* format,
 //==============================================================================
 /** 通过 PluginHost 子进程扫描 32-bit 插件，返回描述列表。
 
-    主进程创建命名管道客户端并启动 PluginHost32.exe --mode=scan，
-    子进程加载插件后返回 ScanResult 消息。
+    主进程作为 IPC 客户端启动 PluginHost32 --mode=scan 子进程（Windows 为命名
+    管道，Linux 为 Unix domain socket），子进程加载插件后返回 ScanResult 消息。
 */
 static bool scanPluginViaHost (const juce::String& fileOrIdentifier,
                                PluginArchitecture arch,
                                juce::OwnedArray<juce::PluginDescription>& result)
 {
-   #if ! JUCE_WINDOWS
-    juce::ignoreUnused (fileOrIdentifier, arch, result);
-    return false;
-   #else
     auto ipcKey = juce::Uuid().toString();
 
     PluginHostLauncher launcher;
@@ -208,7 +208,6 @@ static bool scanPluginViaHost (const juce::String& fileOrIdentifier,
         PluginBlacklist::getInstance().clearEntry (fileOrIdentifier);
 
     return ! result.isEmpty();
-   #endif
 }
 
 //==============================================================================
@@ -665,8 +664,9 @@ juce::String PluginRegistry::computeFileHashSha256 (const juce::File& file) cons
    #if JUCE_WINDOWS
     return computeFileHashSha256WithBCrypt (file);
    #else
-    juce::ignoreUnused (file);
-    return {};
+    // 非 Windows 平台使用 JUCE 自带的 SHA256（juce_cryptography 模块，流式读取文件），
+    // 输出同样是小写十六进制字符串。
+    return juce::SHA256 (file).toHexString();
    #endif
 }
 
@@ -876,6 +876,33 @@ void PluginRegistry::markLastScanReportAsShown()
 //==============================================================================
 juce::FileSearchPath PluginRegistry::getVST3DefaultSearchPath() const
 {
+   #if JUCE_LINUX
+    // Linux 下合并 VST3 与 VST2 两种格式的默认扫描路径并去重：JUCE 分别为其
+    // 返回 ~/.vst3、/usr/lib/vst3… 与 ~/.vst、/usr/lib/vst、/usr/lib/lxvst…，
+    // 两类插件（含 yabridge 桥接插件）因此都能被默认扫描覆盖。
+    juce::FileSearchPath merged;
+
+    for (int i = 0; i < formatManager.getNumFormats(); ++i)
+    {
+        auto* format = formatManager.getFormat (i);
+
+        if (format == nullptr)
+            continue;
+
+        const auto formatName = format->getName();
+
+        if (formatName != juce::VST3PluginFormat::getFormatName()
+            && formatName != juce::VSTPluginFormat::getFormatName())
+            continue;
+
+        auto locations = format->getDefaultLocationsToSearch();
+
+        for (int p = 0; p < locations.getNumPaths(); ++p)
+            merged.addIfNotAlreadyThere (locations[p]);
+    }
+
+    return merged;
+   #else
     for (int i = 0; i < formatManager.getNumFormats(); ++i)
     {
         auto* format = formatManager.getFormat (i);
@@ -885,6 +912,7 @@ juce::FileSearchPath PluginRegistry::getVST3DefaultSearchPath() const
     }
 
     return {};
+   #endif
 }
 
 //==============================================================================

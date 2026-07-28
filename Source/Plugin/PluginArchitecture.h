@@ -25,13 +25,14 @@ enum class PluginArchitecture
 };
 
 //==============================================================================
-/** 读取 VST3 文件 PE 头，返回其目标架构。
+/** 读取插件文件头部，返回其目标架构（Windows 读 PE 头，Linux 读 ELF 头）。
 
-    Windows VST3 本质上是 PE 格式 DLL。本函数在真正加载插件前做以下预检：
-    1. 跳过 macOS 资源分支文件（以 "._" 开头）。
-    2. 读取 PE 头，确认文件是有效的 PE 映像；否则返回 unknown。
+    Windows VST3 本质上是 PE 格式 DLL；Linux 下 VST3 为 bundle 目录、VST2 为裸
+    .so，二者均为 ELF 映像。本函数在真正加载插件前做以下预检：
+    1. 跳过 macOS 资源分支文件（以 "._" 开头，仅 Windows 分支检查）。
+    2. 读取 PE/ELF 头，确认文件是有效的可执行映像；否则返回 unknown。
 
-    非 Windows 平台始终返回 unknown，因为桥接器目前只在 Windows 上实现。
+    其他平台始终返回 unknown。
 */
 PluginArchitecture detectPluginArchitecture (const juce::File& vst3File);
 

@@ -101,7 +101,7 @@ public:
     std::unique_ptr<juce::PluginDescription> findDescriptionForIdentifier (const juce::String& identifier) const;
 
     //==============================================================================
-    /** 返回 VST3 格式的默认扫描路径。 */
+    /** 返回 VST3 格式的默认扫描路径（Linux 下额外合并 VST2 格式的默认路径）。 */
     juce::FileSearchPath getVST3DefaultSearchPath() const;
 
     //==============================================================================
@@ -126,7 +126,7 @@ private:
     void scanForVST3Internal (const juce::FileSearchPath& extraPaths, bool recursive, bool forceRescan);
 
     //==============================================================================
-    /** 自定义扫描器：在真正加载 VST3 之前读取 PE 头，跳过与当前进程架构不匹配的插件，
+    /** 自定义扫描器：在真正加载 VST3 之前读取 PE/ELF 头，跳过与当前进程架构不匹配的插件，
         避免 JUCE Debug 模式下在 juce_VST3PluginFormat.cpp:1208 触发 jassert 导致崩溃。
         同时支持增量扫描：文件未变化且上次扫描成功时直接复用已知描述。 */
     class ArchFilterScanner;
