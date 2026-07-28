@@ -1,0 +1,79 @@
+name: Linux Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUILD_TYPE: Release
+  SCCACHE_GHA_ENABLED: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install x86_64 dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build pkg-config rpm xvfb \
+            libasound2-dev libcurl4-openssl-dev libfreetype-dev libfontconfig1-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev \
+            libxrandr-dev libxrender-dev libxi-dev
+
+      - name: Install i686 dependencies
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib g++-multilib \
+            libasound2-dev:i386 libcurl4-openssl-dev:i386 libfreetype-dev:i386 \
+            libfontconfig1-dev:i386 libx11-dev:i386 libxcomposite-dev:i386 \
+            libxcursor-dev:i386 libxext-dev:i386 libxinerama-dev:i386 \
+            libxrandr-dev:i386 libxrender-dev:i386 libxi-dev:i386
+
+      - name: Cache the build
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Build x86_64
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache .
+          cmake --build build
+
+      - name: Build i686 (PluginHost32)
+        run: |
+          cmake -B build32 -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/linux-i686-toolchain.cmake -DMINIXER_BUILD_32BIT=ON .
+          cmake --build build32
+
+      - name: Assemble staging tree
+        run: |
+          cmake --install build --prefix staging/usr
+          cp build32/PluginHost32_artefacts/${{ env.BUILD_TYPE }}/PluginHost32 staging/usr/lib/minixer/
+
+      - name: Package (tar.gz + rpm)
+        working-directory: build
+        run: cpack -D CPACK_INSTALLED_DIRECTORIES="$PWD/../staging;/" -G TGZ -G RPM
+
+      - name: Smoke check
+        run: |
+          ! ldd staging/usr/lib/minixer/Minixer | grep "not found"
+          xvfb-run -a timeout 20 ./staging/usr/lib/minixer/Minixer; test $? -eq 124
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: minixer-linux-x64
+          path: |
+            build/minixer-*.tar.gz
+            build/minixer-*.rpm
