@@ -13,9 +13,10 @@ option(MINIXER_BUILD_32BIT "仅构建 32 位 PluginHost32" OFF)
 if(DEFINED MINIXER_JUCE_PATH)
     get_filename_component(MINIXER_JUCE_PATH_ABS "${MINIXER_JUCE_PATH}" ABSOLUTE
                            BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-    add_subdirectory("${MINIXER_JUCE_PATH_ABS}" juce-build)
+    add_subdirectory("${MINIXER_JUCE_PATH_ABS}" juce-build EXCLUDE_FROM_ALL)
 else()
-    add_subdirectory(deps/JUCE)
+    # EXCLUDE_FROM_ALL：不带入 JUCE 自身的 install 规则（其头文件不应进包）
+    add_subdirectory(deps/JUCE EXCLUDE_FROM_ALL)
 endif()
 
 # VST2 宿主：社区净室头文件（deps/vst2-headers，须含 pluginterfaces/vst2.x/{aeffect.h,aeffectx.h}）

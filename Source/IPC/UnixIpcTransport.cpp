@@ -75,7 +75,7 @@ bool UnixIpcTransport::connect (const juce::String& key)
 
         if (socketFd < 0)
         {
-            const auto error = errno;
+            const auto error [[maybe_unused]] = errno; // Release 下 DBG 为空，避免 unused 警告
             DBG ("UnixIpcTransport: socket() failed: " << ::strerror (error));
             return false;
         }
@@ -86,7 +86,7 @@ bool UnixIpcTransport::connect (const juce::String& key)
             return true;
         }
 
-        const auto error = errno;
+        const auto error [[maybe_unused]] = errno; // Release 下 DBG 为空，避免 unused 警告
         ::close (socketFd);
         socketFd = -1;
 
@@ -123,7 +123,7 @@ bool UnixIpcTransport::accept (const juce::String& key)
 
     if (listenFd < 0)
     {
-        const auto error = errno;
+        const auto error [[maybe_unused]] = errno; // Release 下 DBG 为空，避免 unused 警告
         DBG ("UnixIpcTransport: socket() failed: " << ::strerror (error));
         return false;
     }
@@ -133,7 +133,7 @@ bool UnixIpcTransport::accept (const juce::String& key)
 
     if (::bind (listenFd, reinterpret_cast<sockaddr*> (&address), sizeof (address)) != 0)
     {
-        const auto error = errno;
+        const auto error [[maybe_unused]] = errno; // Release 下 DBG 为空，避免 unused 警告
         DBG ("UnixIpcTransport: bind() failed: " << ::strerror (error));
         ::close (listenFd);
         return false;
@@ -141,7 +141,7 @@ bool UnixIpcTransport::accept (const juce::String& key)
 
     if (::listen (listenFd, 1) != 0)
     {
-        const auto error = errno;
+        const auto error [[maybe_unused]] = errno; // Release 下 DBG 为空，避免 unused 警告
         DBG ("UnixIpcTransport: listen() failed: " << ::strerror (error));
         ::unlink (address.sun_path);
         ::close (listenFd);
@@ -158,7 +158,7 @@ bool UnixIpcTransport::accept (const juce::String& key)
 
     if (connectionFd < 0)
     {
-        const auto error = errno;
+        const auto error [[maybe_unused]] = errno; // Release 下 DBG 为空，避免 unused 警告
         DBG ("UnixIpcTransport: accept() failed: " << ::strerror (error));
         ::unlink (address.sun_path);
         ::close (listenFd);
@@ -268,7 +268,7 @@ bool UnixIpcTransport::readExact (void* buffer, size_t bytesToRead, int timeoutM
 
             if (pollResult < 0)
             {
-                const auto error = errno;
+                const auto error [[maybe_unused]] = errno; // Release 下 DBG 为空，避免 unused 警告
                 DBG ("UnixIpcTransport: poll() failed: " << ::strerror (error));
                 return false;
             }
@@ -284,7 +284,7 @@ bool UnixIpcTransport::readExact (void* buffer, size_t bytesToRead, int timeoutM
             if (errno == EINTR)
                 continue;
 
-            const auto error = errno;
+            const auto error [[maybe_unused]] = errno; // Release 下 DBG 为空，避免 unused 警告
             DBG ("UnixIpcTransport: recv() failed: " << ::strerror (error));
             return false;
         }
@@ -318,7 +318,7 @@ bool UnixIpcTransport::sendExact (const void* buffer, size_t bytesToSend)
             if (errno == EINTR)
                 continue;
 
-            const auto error = errno;
+            const auto error [[maybe_unused]] = errno; // Release 下 DBG 为空，避免 unused 警告
             DBG ("UnixIpcTransport: send() failed: " << ::strerror (error));
             return false;
         }

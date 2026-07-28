@@ -68,7 +68,10 @@ jobs:
       - name: Smoke check
         run: |
           ! ldd staging/usr/lib/minixer/Minixer | grep "not found"
-          xvfb-run -a timeout 20 ./staging/usr/lib/minixer/Minixer; test $? -eq 124
+          rc=0
+          xvfb-run -a timeout 20 ./staging/usr/lib/minixer/Minixer || rc=$?
+          # timeout 20 存活被杀返回 124 = 通过；其他退出码 = 启动即崩溃
+          test "$rc" -eq 124
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

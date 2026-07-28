@@ -118,14 +118,14 @@ bool UnixSharedMemoryRegion::openInternal (const juce::String& key,
 
         if (fd < 0)
         {
-            const auto error = errno;
+            const auto error [[maybe_unused]] = errno; // Release 下 DBG 为空，避免 unused 警告
             DBG ("UnixSharedMemoryRegion: shm_open() failed: " << ::strerror (error));
             return false;
         }
 
         if (::ftruncate (fd, static_cast<off_t> (size)) != 0)
         {
-            const auto error = errno;
+            const auto error [[maybe_unused]] = errno; // Release 下 DBG 为空，避免 unused 警告
             DBG ("UnixSharedMemoryRegion: ftruncate() failed: " << ::strerror (error));
             ::close (fd);
             ::shm_unlink (nameUtf8);
@@ -138,7 +138,7 @@ bool UnixSharedMemoryRegion::openInternal (const juce::String& key,
 
         if (fd < 0)
         {
-            const auto error = errno;
+            const auto error [[maybe_unused]] = errno; // Release 下 DBG 为空，避免 unused 警告
             DBG ("UnixSharedMemoryRegion: shm_open() failed: " << ::strerror (error));
             return false;
         }
@@ -148,7 +148,7 @@ bool UnixSharedMemoryRegion::openInternal (const juce::String& key,
 
     if (mapped == MAP_FAILED)
     {
-        const auto error = errno;
+        const auto error [[maybe_unused]] = errno; // Release 下 DBG 为空，避免 unused 警告
         DBG ("UnixSharedMemoryRegion: mmap() failed: " << ::strerror (error));
         ::close (fd);
         if (createNew)
